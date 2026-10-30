@@ -1,3 +1,5 @@
+![Banner](banner.png)
+
 # file-dependency-scanner
 Scans files (e.g., scripts, executables, configuration files) for explicit dependencies (e.g., imported libraries, required executables) and reports missing or outdated dependencies.  Supports specifying dependency resolution strategies (e.g., pip, apt). - Focused on File operations and analysis
 
