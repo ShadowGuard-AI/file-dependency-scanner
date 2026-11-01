@@ -47,12 +47,19 @@ def find_python_dependencies(file_path):
         return None
 
     # Regular expression to find import statements (e.g., import os, from requests import get)
+    # Extraction is a regex over raw text, not a parse. It cannot see
+    # dynamic imports, and it happily matches import shaped text inside
+    # comments and strings. The miss I know about: import a, b captures
+    # only a, because the pattern ends at the first module name. I accept
+    # the regex because the report is a first pass, not an audit.
     import_regex = r"(?:from\s+([\w\.]+)\s+import\s+[\w\.]+|import\s+([\w\.]+))"
     matches = re.findall(import_regex, content)
     dependencies = []
     for match in matches:
         for group in match:
             if group:
+                # Only the top level name is kept. from a.b import c depends on the a
+                # distribution, and checking a.b as a package name would fail.
                 top_level = group.split(".")[0]
                 if top_level not in dependencies:
                     dependencies.append(top_level)
@@ -62,12 +69,21 @@ def find_python_dependencies(file_path):
 
 def check_dependencies(dependencies):
     results = {}
+    # Standard library names are answered from the interpreter itself and
+    # never reach pip. Everything else is checked with pip show, which
+    # answers about distribution names, and those are not import names:
+    # a file importing PIL or yaml is reported missing unless a
+    # distribution literally named PIL or yaml is installed. That mismatch
+    # is the known false positive in every report this tool writes.
     stdlib = getattr(sys, "stdlib_module_names", set())
     for dep in dependencies:
         if dep in stdlib:
             results[dep] = True
             continue
         try:
+            # One pip subprocess per dependency. Slow on a long list, and the run
+            # inherits whatever pip is first on PATH, which may belong to a
+            # different interpreter than the one running this script.
             result = subprocess.run(["pip", "show", dep], capture_output=True, text=True)
             results[dep] = result.returncode == 0
         except FileNotFoundError:
@@ -79,6 +95,9 @@ def check_dependencies(dependencies):
     return results
 
 
+# A report that fails to write is logged and swallowed; main does not
+# hear about it and still exits 0. Noted as a gap, the same shape as
+# several of my other report writers.
 def generate_report(results, file_path, output_file=None):
     """
     Generates a report of missing dependencies.
